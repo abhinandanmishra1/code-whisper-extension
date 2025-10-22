@@ -1,0 +1,42 @@
+.codewhisper-loading-overlay {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: rgba(26, 26, 46, 0.95);
+  border-radius: 8px;
+  padding: 16px 20px;
+  color: #fff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 999999;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid rgba(102, 126, 234, 0.3);
+}
+
+.codewhisper-loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid rgba(102, 126, 234, 0.3);
+  border-radius: 50%;
+  border-top-color: #667eea;
+  animation: codewhisper-spin 1s linear infinite;
+}
+
+.codewhisper-status {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.codewhisper-status-details {
+  font-size: 12px;
+  opacity: 0.7;
+  margin-top: 4px;
+}
+
+@keyframes codewhisper-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

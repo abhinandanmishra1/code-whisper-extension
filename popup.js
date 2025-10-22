@@ -3,6 +3,7 @@
 document.addEventListener('DOMContentLoaded', async () => {
   // Get DOM elements
   const enableToggle = document.getElementById('enableToggle');
+  const devToolsToggle = document.getElementById('devToolsToggle');
   const apiKeyInput = document.getElementById('apiKey');
   const modelSelect = document.getElementById('model');
   const typingSpeedInput = document.getElementById('typingSpeed');
@@ -20,6 +21,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     enableToggle.classList.toggle('active');
   });
 
+  devToolsToggle.addEventListener('click', () => {
+    devToolsToggle.classList.toggle('active');
+    chrome.runtime.sendMessage({
+      action: 'toggleDevTools',
+      enabled: devToolsToggle.classList.contains('active')
+    });
+  });
+
   typingSpeedInput.addEventListener('input', (e) => {
     speedValue.textContent = `${e.target.value}ms`;
   });
@@ -34,14 +43,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const settings = await chrome.storage.sync.get([
         'enabled',
+        'devToolsEnabled',
         'apiKey',
         'model',
         'typingSpeed'
       ]);
 
-      // Set toggle
+      // Set toggles
       if (settings.enabled !== false) {
         enableToggle.classList.add('active');
+      }
+      
+      if (settings.devToolsEnabled) {
+        devToolsToggle.classList.add('active');
       }
 
       // Set API key (masked)
@@ -72,6 +86,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       const settings = {
         enabled: enableToggle.classList.contains('active'),
+        devToolsEnabled: devToolsToggle.classList.contains('active'),
         apiKey: apiKeyInput.value.trim(),
         model: modelSelect.value,
         typingSpeed: parseInt(typingSpeedInput.value)
@@ -83,8 +98,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      if (!settings.apiKey.startsWith('sk-')) {
-        showStatus(saveStatus, 'error', 'Invalid API key format');
+      // Validate Gemini API key format (should start with 'AIza' and be 39 characters)
+      if (!settings.apiKey.startsWith('AIza') || settings.apiKey.length !== 39) {
+        showStatus(saveStatus, 'error', 'Invalid Gemini API key format. Key should start with "AIza" and be 39 characters long.');
         return;
       }
 
@@ -104,7 +120,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   /**
-   * Test OpenAI API connection
+   * Test Gemini API connection
    */
   async function testConnection() {
     const apiKey = apiKeyInput.value.trim();

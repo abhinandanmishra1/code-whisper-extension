@@ -1,24 +1,36 @@
 // Content script for CodeWhisper AI
-// Detects trigger comments and handles code typing
+// Detects trigger comments and handles code typing on LeetCode
 
-console.log('CodeWhisper AI content script loaded');
+// Initialize only if we're on LeetCode
+function initializeOnLeetCode() {
+  if (!window.location.hostname.includes('leetcode.com')) {
+    console.log('CodeWhisper AI: Not on LeetCode, script disabled');
+    return false;
+  }
+
+  console.log('CodeWhisper AI content script loaded on LeetCode');
+  return true;
+}
+
+// Main initialization
+function main() {
+  // Exit if not on LeetCode
+  if (!initializeOnLeetCode()) {
+    console.log('CodeWhisper AI: Script not initialized');
+    return;
+  }
+  init();
+  console.log('CodeWhisper AI: Script initialized on LeetCode');
+}
 
 let isEnabled = true;
 let typingSpeed = 50; // ms between characters
 let apiKey = '';
 let selectedModel = 'gpt-4o-mini';
 let isGenerating = false;
-let badge = null;
 
 // Load settings from storage
 loadSettings();
-
-// Comment patterns to detect
-const COMMENT_PATTERNS = [
-  /^\s*\/\/\s*(.+)$/,  // Single-line // comment
-  /^\s*#\s*(.+)$/,      // Python/Ruby # comment
-  /^\s*\/\*\s*(.+)\s*\*\/$/  // Multi-line /* */ comment
-];
 
 /**
  * Load settings from chrome storage
@@ -50,46 +62,27 @@ chrome.storage.onChanged.addListener((changes, namespace) => {
  */
 function init() {
   // Listen for keydown events on the entire document
-  document.addEventListener('keydown', handleKeyDown, true);
-  
-  // Create floating badge
-  createBadge();
+  document.addEventListener('keydown', handleKeyDown);
   
   // Monitor for dynamically added editors (Monaco, CodeMirror, etc.)
-  observeEditors();
+  // observeEditors();
 }
 
 /**
  * Handle keydown events
  */
 async function handleKeyDown(e) {
-  if (!isEnabled || isGenerating) return;
+  if (!isEnabled) return;
   
-  // Detect Enter key
-  if (e.key === 'Enter') {
+  // Detect Cmd+B key combination
+  if (e.key.toLowerCase() === 'b' && e.metaKey) {
+    console.log('🎯 Cmd+B pressed');
     const target = e.target;
     
     // Check if target is an input element
     if (isEditableElement(target)) {
-      const text = getElementText(target);
-      const cursorPos = getCursorPosition(target);
-      
-      // Get the current line
-      const lines = text.substring(0, cursorPos).split('\n');
-      const currentLine = lines[lines.length - 1];
-      
-      // Check if current line matches comment pattern
-      for (const pattern of COMMENT_PATTERNS) {
-        const match = currentLine.match(pattern);
-        if (match) {
-          const comment = match[1].trim();
-          if (comment) {
-            e.preventDefault();
-            await triggerCodeGeneration(target, comment, text, cursorPos);
-            break;
-          }
-        }
-      }
+      e.preventDefault(); // Prevent default Cmd+B behavior
+      await generateSolution(target);
     }
   }
 }
@@ -100,13 +93,20 @@ async function handleKeyDown(e) {
 function isEditableElement(element) {
   if (!element) return false;
   
+  // Check if we're in the LeetCode editor
+  const isLeetCodeEditor = 
+    document.querySelector('.monaco-editor') !== null ||
+    document.querySelector('[data-monaco-editor-id]') !== null;
+  
   return (
     element.tagName === 'TEXTAREA' ||
     element.tagName === 'INPUT' ||
     element.isContentEditable ||
     element.classList.contains('monaco-editor') ||
     element.classList.contains('ace_editor') ||
-    element.classList.contains('CodeMirror')
+    element.classList.contains('CodeMirror') ||
+    element.closest('.monaco-editor, [data-monaco-editor-id]') !== null ||
+    isLeetCodeEditor
   );
 }
 
@@ -114,151 +114,184 @@ function isEditableElement(element) {
  * Get text content from element
  */
 function getElementText(element) {
-  if (element.tagName === 'TEXTAREA' || element.tagName === 'INPUT') {
-    return element.value;
-  } else if (element.isContentEditable) {
-    return element.innerText || element.textContent;
-  }
-  
-  // Try to find Monaco/Ace editor
+  // For LeetCode, always try to get Monaco editor first
   const editor = findEditor(element);
   if (editor) {
+    const model = editor.getModel();
+    if (model) {
+      return model.getValue();
+    }
     return editor.getValue ? editor.getValue() : '';
+  }
+  
+  if (element.tagName === 'TEXTAREA' || element.tagName === 'INPUT') {
+    return element.value || '';
+  } else if (element.isContentEditable) {
+    return element.innerText || element.textContent || '';
   }
   
   return '';
 }
 
 /**
- * Get cursor position
- */
-function getCursorPosition(element) {
-  if (element.tagName === 'TEXTAREA' || element.tagName === 'INPUT') {
-    return element.selectionStart;
-  }
-  return 0;
-}
-
-/**
  * Find Monaco/Ace/CodeMirror editor instance
  */
 function findEditor(element) {
-  // Monaco Editor
+  console.log('🔍 Finding editor for element:', element);
+
+  // First try to find Monaco editor directly
   if (window.monaco && window.monaco.editor) {
     const editors = window.monaco.editor.getEditors();
+    console.log('🔍 Found Monaco editors:', editors.length);
+    
+    // Try to find the active editor first
+    const activeEditor = editors.find(editor => {
+      const model = editor.getModel();
+      return model && editor.hasTextFocus();
+    });
+    
+    if (activeEditor) {
+      console.log('✅ Found active Monaco editor');
+      return activeEditor;
+    }
+    
+    // If no active editor, get the first editor with a model
+    const firstValidEditor = editors.find(editor => editor.getModel());
+    if (firstValidEditor) {
+      console.log('✅ Using first valid Monaco editor');
+      return firstValidEditor;
+    }
+  }
+
+  // Try to find CodeMirror editor (for playground)
+  const codeMirrorTextArea = document.querySelector('textarea[name="lc-codemirror"]');
+  if (codeMirrorTextArea) {
+    console.log('✅ Found CodeMirror textarea');
+    return {
+      getValue: () => codeMirrorTextArea.value,
+      setValue: (value) => {
+        codeMirrorTextArea.value = value;
+        codeMirrorTextArea.dispatchEvent(new Event('input', { bubbles: true }));
+        codeMirrorTextArea.dispatchEvent(new Event('change', { bubbles: true }));
+      },
+      getModel: () => ({
+        getValue: () => codeMirrorTextArea.value,
+        getLanguageId: () => {
+          // Try to detect language from the code content
+          const code = codeMirrorTextArea.value.toLowerCase();
+          if (code.includes('#include') || code.includes('std::') || code.includes("cout<<")) return 'cpp';
+          if (code.includes('def ') || code.includes('print(')) return 'python';
+          if (code.includes('public class') || code.includes('System.out')) return 'java';
+          return 'auto-detect';
+        }
+      }),
+      getPosition: () => ({
+        lineNumber: 1,
+        column: codeMirrorTextArea.selectionStart
+      }),
+      executeEdits: (_, edits) => {
+        const edit = edits[0];
+        const start = codeMirrorTextArea.selectionStart;
+        const end = codeMirrorTextArea.selectionEnd;
+        const value = codeMirrorTextArea.value;
+        
+        codeMirrorTextArea.value = value.substring(0, start) + edit.text + value.substring(end);
+        codeMirrorTextArea.selectionStart = codeMirrorTextArea.selectionEnd = start + edit.text.length;
+        
+        codeMirrorTextArea.dispatchEvent(new Event('input', { bubbles: true }));
+        codeMirrorTextArea.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      },
+      trigger: true // Flag to indicate this editor supports executeEdits
+    };
+  }
+  
+  // General Monaco Editor fallback
+  if (window.monaco && window.monaco.editor) {
+    const editors = window.monaco.editor.getEditors();
+    console.log('🔍 Found Monaco editors:', editors.length);
     for (const editor of editors) {
+      // Check if the editor contains our target element
       if (editor.getDomNode().contains(element)) {
+        console.log('✅ Found matching Monaco editor');
         return editor;
       }
     }
-  }
-  
-  // Ace Editor
-  if (window.ace) {
-    const aceEditor = window.ace.edit(element);
-    if (aceEditor) return aceEditor;
-  }
-  
-  return null;
-}
-
-/**
- * Trigger code generation
- */
-async function triggerCodeGeneration(target, comment, fullText, cursorPos) {
-  isGenerating = true;
-  showBadge('✨ AI Thinking...');
-  
-  try {
-    // Extract context (last 10-15 lines)
-    const context = extractContext(fullText, cursorPos);
-    
-    // Detect language
-    const language = detectLanguage(fullText) || 'javascript';
-    
-    // Request code generation from background script
-    const response = await chrome.runtime.sendMessage({
-      action: 'generateCode',
-      data: {
-        comment,
-        context,
-        language,
-        apiKey,
-        model: selectedModel
-      }
-    });
-    
-    if (response.success) {
-      showBadge('✨ AI Typing...');
-      
-      // Insert newline first
-      insertText(target, '\n');
-      await delay(100);
-      
-      // Type the generated code
-      await typeLikeHuman(target, response.code);
-      
-      showBadge('✅ Done!');
-      setTimeout(hideBadge, 2000);
-    } else {
-      throw new Error(response.error);
+    // If no specific match but we have editors, return the first one
+    if (editors.length > 0) {
+      console.log('✅ Using first available Monaco editor');
+      return editors[0];
     }
-  } catch (error) {
-    console.error('Code generation failed:', error);
-    showBadge('❌ Error: ' + error.message);
-    setTimeout(hideBadge, 3000);
-  } finally {
-    isGenerating = false;
   }
-}
-
-/**
- * Extract context from text
- */
-function extractContext(text, cursorPos) {
-  const lines = text.substring(0, cursorPos).split('\n');
-  const contextLines = lines.slice(-15); // Last 15 lines
-  return contextLines.join('\n');
-}
-
-/**
- * Detect programming language from content
- */
-function detectLanguage(text) {
-  // Check for common language indicators
-  if (text.includes('def ') || text.includes('import ')) return 'python';
-  if (text.includes('function ') || text.includes('const ') || text.includes('let ')) return 'javascript';
-  if (text.includes('public class ') || text.includes('private ')) return 'java';
-  if (text.includes('#include') || text.includes('std::')) return 'cpp';
-  if (text.includes('func ') || text.includes('package main')) return 'go';
   
-  // Check page URL for hints
-  const url = window.location.href.toLowerCase();
-  if (url.includes('python')) return 'python';
-  if (url.includes('java')) return 'java';
-  if (url.includes('cpp') || url.includes('c++')) return 'cpp';
-  if (url.includes('javascript') || url.includes('js')) return 'javascript';
-  
-  return 'javascript'; // Default
-}
-
-/**
- * Type text like a human
- */
-async function typeLikeHuman(target, text) {
-  for (const ch of text) {
-    insertText(target, ch);
-    
-    // Random delay between characters
-    const delay_ms = Math.random() * 40 + typingSpeed - 20;
-    await delay(delay_ms);
+  // Ace Editor fallback
+  if (window.ace) {
+    console.log('🔍 Trying Ace editor');
+    const aceEditor = window.ace.edit(element);
+    if (aceEditor) {
+      console.log('✅ Using Ace editor');
+      return aceEditor;
+    }
   }
+  
+  console.log('❌ No editor found');
+  return null;
 }
 
 /**
  * Insert text at cursor position
  */
 function insertText(target, text) {
+  // First try to get the editor instance
+  const editor = findEditor(target);
+  if (editor) {
+    console.log('📝 Inserting text using editor:', editor);
+    
+    // If it's our CodeMirror wrapper
+    if (editor.setValue) {
+      const currentValue = editor.getValue();
+      const textarea = document.querySelector('textarea[name="lc-codemirror"]');
+      if (textarea) {
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        
+        // Insert text at cursor position
+        const newValue = currentValue.substring(0, start) + text + currentValue.substring(end);
+        editor.setValue(newValue);
+        
+        // Set cursor position after inserted text
+        textarea.selectionStart = textarea.selectionEnd = start + text.length;
+        
+        console.log('✅ Text inserted using CodeMirror wrapper');
+        return;
+      }
+    }
+    
+    // Try Monaco editor methods
+    if (editor.executeEdits) {
+      const position = editor.getPosition();
+      editor.executeEdits('', [{
+        range: {
+          startLineNumber: position.lineNumber,
+          startColumn: position.column,
+          endLineNumber: position.lineNumber,
+          endColumn: position.column
+        },
+        text: text
+      }]);
+      console.log('✅ Text inserted using Monaco editor');
+      return;
+    }
+    
+    // Try simple insert method
+    if (editor.insert) {
+      editor.insert(text);
+      console.log('✅ Text inserted using insert method');
+      return;
+    }
+  }
+  
+  // Fallback to direct textarea/input handling
   if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {
     const start = target.selectionStart;
     const end = target.selectionEnd;
@@ -267,25 +300,163 @@ function insertText(target, text) {
     target.value = value.substring(0, start) + text + value.substring(end);
     target.selectionStart = target.selectionEnd = start + text.length;
     
-    // Trigger input event for frameworks
     target.dispatchEvent(new Event('input', { bubbles: true }));
     target.dispatchEvent(new Event('change', { bubbles: true }));
-  } else if (target.isContentEditable) {
+    console.log('✅ Text inserted using direct textarea/input');
+    return;
+  }
+  
+  // Last resort for contentEditable
+  if (target.isContentEditable) {
     document.execCommand('insertText', false, text);
-  } else {
-    // Try Monaco/Ace editor
-    const editor = findEditor(target);
-    if (editor && editor.trigger) {
-      // Monaco editor
-      const position = editor.getPosition();
-      editor.executeEdits('', [{
-        range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column),
-        text: text
-      }]);
-    } else if (editor && editor.insert) {
-      // Ace editor
-      editor.insert(text);
+    console.log('✅ Text inserted using execCommand');
+    return;
+  }
+  
+  console.log('❌ No suitable method found to insert text');
+}
+
+/**
+ * Loading overlay functions
+ */
+function showLoadingOverlay(message, details = '') {
+  hideLoadingOverlay();
+  
+  const overlay = document.createElement('div');
+  overlay.className = 'codewhisper-loading-overlay';
+  overlay.id = 'codewhisper-loading';
+  
+  const spinner = document.createElement('div');
+  spinner.className = 'codewhisper-loading-spinner';
+  
+  const status = document.createElement('div');
+  status.className = 'codewhisper-status';
+  status.textContent = message;
+  
+  if (details) {
+    const statusDetails = document.createElement('div');
+    statusDetails.className = 'codewhisper-status-details';
+    statusDetails.textContent = details;
+    status.appendChild(statusDetails);
+  }
+  
+  overlay.appendChild(spinner);
+  overlay.appendChild(status);
+  document.body.appendChild(overlay);
+}
+
+function hideLoadingOverlay() {
+  const existing = document.getElementById('codewhisper-loading');
+  if (existing) {
+    existing.remove();
+  }
+}
+
+function updateLoadingStatus(message, details = '') {
+  const overlay = document.getElementById('codewhisper-loading');
+  if (overlay) {
+    const status = overlay.querySelector('.codewhisper-status');
+    if (status) {
+      status.textContent = message;
+      if (details) {
+        const statusDetails = overlay.querySelector('.codewhisper-status-details') || document.createElement('div');
+        statusDetails.className = 'codewhisper-status-details';
+        statusDetails.textContent = details;
+        status.appendChild(statusDetails);
+      }
     }
+  }
+}
+
+/**
+ * Generate solution for the problem
+ */
+async function generateSolution(target) {
+  isGenerating = true;
+  showLoadingOverlay('Analyzing LeetCode problem...');
+  
+  try {
+    // Get current editor content and language
+    const editorInstance = findEditor(target);
+    if (!editorInstance) {
+      throw new Error('No editor found on the page');
+    }
+    console.log('✅ Using editor:', editorInstance);
+
+    const currentCode = editorInstance.getValue?.() || '';
+    const editorModel = editorInstance.getModel?.();
+    const editorLanguage = editorModel?.getLanguageId() || 'auto-detect';
+    
+    console.log('📝 Current Code:', currentCode);
+    console.log('🔤 Editor Language:', editorLanguage);
+    
+    // Build initial prompt with code context
+    const initialPrompt = `
+You are a coding assistant. I will provide you with code comments that describe what needs to be implemented.
+Your task is to implement the exact functionality described in the comments.
+
+Current code and comments:
+${currentCode}
+
+Instructions:
+1. Read the comments carefully to understand the required functionality
+2. Implement EXACTLY what the comments describe
+3. Match the coding style of the existing code
+4. If comments mention specific algorithms or data structures, use those exactly
+5. If comments specify time/space complexity requirements, ensure they are met
+
+Remember:
+- Follow the comments precisely
+- Don't add extra functionality not mentioned in comments
+- Keep the code clean and well-structured
+- Add appropriate error handling if needed
+- Use the same variable naming style as surrounding code
+
+Return only the implementation code that fulfills the comment requirements.
+`;
+
+    console.log('🔍 Initial Prompt:', initialPrompt);
+
+    const response = await chrome.runtime.sendMessage({
+      action: 'generateCode',
+      data: {
+        comment: initialPrompt,
+        context: JSON.stringify({
+          type: 'competitive_programming',
+          currentCode: currentCode,
+          editorLanguage: editorLanguage
+        }),
+        language: editorLanguage,
+        apiKey,
+        model: selectedModel
+      }
+    });
+
+    if (!response.success) {
+      throw new Error(response.error);
+    }
+
+    console.log('💡 LLM Response:', response.code);
+    
+    // Insert the code
+    updateLoadingStatus('Inserting solution...');
+    if (editorInstance) {
+      insertText(target, response.code);
+    } else {
+      throw new Error('Editor not found');
+    }
+
+    // Show success message
+    updateLoadingStatus('Code inserted!', 'Press ⌘+B again for more suggestions');
+    await delay(1500);
+
+  } catch (error) {
+    console.error('Failed to generate solution:', error);
+    updateLoadingStatus('Error', error.message);
+    await delay(3000);
+  } finally {
+    hideLoadingOverlay();
+    isGenerating = false;
   }
 }
 
@@ -296,84 +467,9 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/**
- * Create floating badge
- */
-function createBadge() {
-  badge = document.createElement('div');
-  badge.id = 'codewhisper-badge';
-  badge.style.cssText = `
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 12px 20px;
-    border-radius: 25px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    font-size: 14px;
-    font-weight: 600;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-    z-index: 999999;
-    display: none;
-    animation: slideIn 0.3s ease-out;
-  `;
-  
-  // Add animation
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes slideIn {
-      from {
-        transform: translateY(100px);
-        opacity: 0;
-      }
-      to {
-        transform: translateY(0);
-        opacity: 1;
-      }
-    }
-  `;
-  document.head.appendChild(style);
-  document.body.appendChild(badge);
-}
-
-/**
- * Show badge with message
- */
-function showBadge(message) {
-  if (badge) {
-    badge.textContent = message;
-    badge.style.display = 'block';
-  }
-}
-
-/**
- * Hide badge
- */
-function hideBadge() {
-  if (badge) {
-    badge.style.display = 'none';
-  }
-}
-
-/**
- * Observe for dynamically added editors
- */
-function observeEditors() {
-  const observer = new MutationObserver((mutations) => {
-    // Re-initialize listeners when DOM changes
-    // This helps with single-page applications
-  });
-  
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true
-  });
-}
-
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', () => main());
 } else {
-  init();
+  main();
 }

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CodeWhisper AI DevTools</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 100%;
+      height: 100vh;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo {
+      font-size: 24px;
+    }
+
+    .title {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .chat-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 16px;
+      gap: 16px;
+      overflow-y: auto;
+    }
+
+    .message {
+      padding: 12px 16px;
+      border-radius: 8px;
+      max-width: 80%;
+    }
+
+    .message.prompt {
+      background: rgba(255, 255, 255, 0.1);
+      align-self: flex-end;
+    }
+
+    .message.response {
+      background: rgba(102, 126, 234, 0.1);
+      align-self: flex-start;
+    }
+
+    .message-header {
+      font-size: 12px;
+      color: #888;
+      margin-bottom: 8px;
+    }
+
+    .message-content {
+      font-size: 14px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+
+    .message-content code {
+      background: rgba(0, 0, 0, 0.2);
+      padding: 2px 4px;
+      border-radius: 4px;
+      font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+    }
+
+    .empty-state {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #666;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo">🔍</div>
+    <div class="title">CodeWhisper AI DevTools</div>
+  </div>
+
+  <div class="chat-container" id="chatContainer">
+    <div class="empty-state">
+      Use Shift+Enter in the editor to see prompts and responses
+    </div>
+  </div>
+
+  <script src="devtools.js"></script>
+</body>
+</html>

@@ -148,6 +148,7 @@
       border-radius: 3px;
       outline: none;
       -webkit-appearance: none;
+      appearance: none;
     }
 
     input[type="range"]::-webkit-slider-thumb {
@@ -249,23 +250,34 @@
       <div class="toggle" id="enableToggle"></div>
     </div>
 
+    <!-- DevTools Toggle -->
+    <div class="toggle-container">
+      <div class="toggle-label">Developer Tools</div>
+      <div class="toggle" id="devToolsToggle"></div>
+      <div class="hint">Show chat interface and prompts (⌘+B to trigger)</div>
+    </div>
+
     <!-- API Key Section -->
     <div class="section">
-      <div class="section-title">OpenAI Configuration</div>
+      <div class="section-title">Google Gemini Configuration</div>
       
       <div class="input-group">
         <label for="apiKey">API Key</label>
-        <input type="password" id="apiKey" placeholder="sk-...">
-        <div class="hint">Get your API key from <a href="https://platform.openai.com/api-keys" target="_blank" style="color: #667eea;">platform.openai.com</a></div>
+        <input type="password" id="apiKey" placeholder="Enter your Gemini API key">
+        <div class="hint">Get your API key from <a href="https://makersuite.google.com/app/apikey" target="_blank" style="color: #667eea;">Google AI Studio</a></div>
       </div>
 
       <div class="input-group">
         <label for="model">Model</label>
         <select id="model">
-          <option value="gpt-4o-mini">GPT-4o Mini (Recommended)</option>
-          <option value="gpt-4o">GPT-4o</option>
-          <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
+          <option value="models/gemini-2.5-pro">Gemini 2.5 Pro (Best Quality)</option>
+          <option value="models/gemini-2.5-flash">Gemini 2.5 Flash (Fast & Powerful)</option>
+          <option value="models/gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite (Fast & Efficient)</option>
+          <option value="models/gemini-2.0-flash">Gemini 2.0 Flash (Legacy)</option>
+          <option value="models/gemini-2.0-flash-001">Gemini 2.0 Flash 001 (Stable)</option>
+          <option value="models/gemini-2.0-flash-lite">Gemini 2.0 Flash-Lite (Legacy Lite)</option>
         </select>
+        <div class="hint">Gemini 2.5 Pro offers the best quality, while Flash variants provide faster response times</div>
       </div>
 
       <button class="button secondary" id="testBtn">Test Connection</button>
